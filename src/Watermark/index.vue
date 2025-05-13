@@ -2,6 +2,17 @@
 import { ref, reactive, computed, onMounted, nextTick } from 'vue';
 import { createWatermark } from './utils.js';
 
+// 导入Material Design图标
+import UploadIcon from 'vue-material-design-icons/CloudUpload.vue';
+import SettingsIcon from 'vue-material-design-icons/Cog.vue';
+import ArrowBackIcon from 'vue-material-design-icons/ArrowLeft.vue';
+import DeleteIcon from 'vue-material-design-icons/Delete.vue';
+import CloseIcon from 'vue-material-design-icons/Close.vue';
+import DownloadIcon from 'vue-material-design-icons/Download.vue';
+import CheckIcon from 'vue-material-design-icons/Check.vue';
+import CheckAllIcon from 'vue-material-design-icons/CheckAll.vue';
+import DownloadMultipleIcon from 'vue-material-design-icons/DownloadMultiple.vue';
+
 // 应用状态
 const appState = ref('upload'); // 'upload' 或 'edit'
 
@@ -26,11 +37,25 @@ const watermarkSettings = reactive({
   customTime: new Date(), // 自定义时间
   prefix: '', // 文件名前缀
   suffix: '_watermark', // 文件名后缀
-  // 水印位置 (可拖动, 使用百分比)
-  position: {
-    x: 80, // 横向位置百分比 (0-100)
-    y: 90, // 纵向位置百分比 (0-100)
-  }
+  position: 8, // 位置索引 (0-8，对应九宫格位置)
+});
+
+// 位置映射表 (九宫格)
+const positionMap = [
+  { name: '左上', x: 0, y: 0 }, // 0
+  { name: '上中', x: 0.5, y: 0 }, // 1
+  { name: '右上', x: 1, y: 0 }, // 2
+  { name: '左中', x: 0, y: 0.5 }, // 3
+  { name: '中心', x: 0.5, y: 0.5 }, // 4
+  { name: '右中', x: 1, y: 0.5 }, // 5
+  { name: '左下', x: 0, y: 1 }, // 6
+  { name: '下中', x: 0.5, y: 1 }, // 7
+  { name: '右下', x: 1, y: 1 }, // 8
+];
+
+// 获取当前选择的位置坐标
+const currentPosition = computed(() => {
+  return positionMap[watermarkSettings.position] || positionMap[8]; // 默认右下
 });
 
 // 直链输入
@@ -39,8 +64,6 @@ const imageUrl = ref('');
 const isDragging = ref(false);
 // 加载状态
 const loading = ref(false);
-// 水印拖动状态
-const isDraggingWatermark = ref(false);
 // 图片容器引用
 const imageContainer = ref(null);
 // 水印容器引用
@@ -64,14 +87,79 @@ const formattedTimestamp = computed(() => {
 
 // 水印样式
 const watermarkStyle = computed(() => {
+  const position = currentPosition.value;
+  
+  // 定义距离边缘的内边距（像素）
+  const padding = 20; 
+  
+  // 计算基于系数的百分比位置，并考虑内边距
+  let left, top;
+  
+  // 左侧、中间和右侧的x坐标计算
+  if (position.x === 0) { // 左侧
+    left = `${padding}px`;
+  } else if (position.x === 1) { // 右侧
+    left = `calc(100% - ${padding}px)`;
+  } else { // 中间
+    left = `${position.x * 100}%`;
+  }
+  
+  // 顶部、中间和底部的y坐标计算
+  if (position.y === 0) { // 顶部
+    top = `${padding}px`;
+  } else if (position.y === 1) { // 底部
+    top = `calc(100% - ${padding}px)`;
+  } else { // 中间
+    top = `${position.y * 100}%`;
+  }
+  
+  // 根据位置确定转换原点
+  let transform;
+  if (position.x === 0) {
+    // 左对齐
+    if (position.y === 0) {
+      transform = 'translate(0, 0)'; // 左上
+    } else if (position.y === 1) {
+      transform = 'translate(0, -100%)'; // 左下
+    } else {
+      transform = 'translate(0, -50%)'; // 左中
+    }
+  } else if (position.x === 1) {
+    // 右对齐
+    if (position.y === 0) {
+      transform = 'translate(-100%, 0)'; // 右上
+    } else if (position.y === 1) {
+      transform = 'translate(-100%, -100%)'; // 右下
+    } else {
+      transform = 'translate(-100%, -50%)'; // 右中
+    }
+  } else {
+    // 水平居中
+    if (position.y === 0) {
+      transform = 'translate(-50%, 0)'; // 上中
+    } else if (position.y === 1) {
+      transform = 'translate(-50%, -100%)'; // 下中
+    } else {
+      transform = 'translate(-50%, -50%)'; // 中心
+    }
+  }
+  
   return {
     color: watermarkSettings.color,
     opacity: watermarkSettings.opacity,
     fontSize: `${watermarkSettings.fontSize}px`,
-    left: `${watermarkSettings.position.x}%`,
-    top: `${watermarkSettings.position.y}%`,
-    transform: 'translate(-50%, -50%)',
-    textShadow: '2px 2px 4px rgba(0, 0, 0, 0.8)'
+    left: left,
+    top: top,
+    transform: transform,
+    textShadow: '2px 2px 4px rgba(0, 0, 0, 0.8)',
+    maxWidth: 'calc(100% - 40px)',  // 限制最大宽度，减去两侧内边距
+    textOverflow: 'ellipsis',  // 超出部分省略
+    position: 'absolute',  // 确保绝对定位
+    whiteSpace: 'nowrap',  // 确保文本不换行
+    lineHeight: 'normal',  // 使用正常行高
+    padding: '2px 5px',    // 添加一点内边距，确保文本有足够空间
+    borderRadius: '2px',   // 轻微的圆角
+    display: 'block'       // 确保显示为块级元素
   };
 });
 
@@ -210,41 +298,6 @@ const backToUpload = () => {
 // 切换设置面板显示状态
 const toggleSettings = () => {
   showSettings.value = !showSettings.value;
-};
-
-// 开始拖动水印
-const startDragWatermark = (event) => {
-  if (!imageContainer.value) return;
-  event.preventDefault();
-  event.stopPropagation();
-  isDraggingWatermark.value = true;
-  
-  // 获取容器位置和尺寸
-  const containerRect = imageContainer.value.getBoundingClientRect();
-  
-  const handleMouseMove = (moveEvent) => {
-    if (!isDraggingWatermark.value) return;
-    
-    // 计算鼠标在容器内的相对位置（百分比）
-    const x = Math.max(0, Math.min(100, ((moveEvent.clientX - containerRect.left) / containerRect.width) * 100));
-    const y = Math.max(0, Math.min(100, ((moveEvent.clientY - containerRect.top) / containerRect.height) * 100));
-    
-    // 更新水印位置
-    watermarkSettings.position.x = x;
-    watermarkSettings.position.y = y;
-  };
-  
-  const handleMouseUp = () => {
-    isDraggingWatermark.value = false;
-    document.removeEventListener('mousemove', handleMouseMove);
-    document.removeEventListener('mouseup', handleMouseUp);
-  };
-  
-  document.addEventListener('mousemove', handleMouseMove);
-  document.addEventListener('mouseup', handleMouseUp);
-  
-  // 初始移动到事件发生位置
-  handleMouseMove(event);
 };
 
 // 应用水印
@@ -387,9 +440,7 @@ const clearImages = () => {
       >
         <div class="drop-content">
           <div class="upload-icon">
-            <svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 24 24">
-              <path fill="currentColor" d="M19.35 10.04A7.49 7.49 0 0 0 12 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 0 0 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5c0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5l5 5h-3z"/>
-            </svg>
+            <upload-icon :size="48" />
           </div>
           <p>拖拽图片到此处，或</p>
           <input 
@@ -400,7 +451,10 @@ const clearImages = () => {
             @change="handleFileUpload"
             class="file-input"
           />
-          <label for="file-upload" class="upload-button">选择图片</label>
+          <label for="file-upload" class="upload-button">
+            <upload-icon :size="20" />
+            <span>选择图片</span>
+          </label>
         </div>
       </div>
       
@@ -420,7 +474,7 @@ const clearImages = () => {
             class="url-upload-button"
             :disabled="loading"
           >
-            {{ loading ? '上传中...' : '上传' }}
+            <upload-icon :size="20" />
           </button>
         </div>
       </div>
@@ -429,21 +483,17 @@ const clearImages = () => {
     <!-- 编辑页面 -->
     <div v-else-if="appState === 'edit'" class="edit-page">
       <div class="edit-header">
-        <button @click="backToUpload" class="back-button">
-          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24">
-            <path fill="currentColor" d="M20 11H7.83l5.59-5.59L12 4l-8 8l8 8l1.41-1.41L7.83 13H20v-2z"/>
-          </svg>
-          返回
+        <button @click="backToUpload" class="icon-btn" title="返回">
+          <arrow-back-icon :size="16" />
         </button>
         <h1>编辑水印</h1>
         <div class="action-buttons">
-          <button @click="toggleSettings" class="settings-button">
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24">
-              <path fill="currentColor" d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.44.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.48-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
-            </svg>
-            设置
+          <button @click="toggleSettings" class="icon-btn" title="设置">
+            <settings-icon :size="16" />
           </button>
-          <button @click="clearImages" class="clear-button">清空图片</button>
+          <button @click="clearImages" class="icon-btn" title="清空图片">
+            <delete-icon :size="16" />
+          </button>
         </div>
       </div>
       
@@ -458,7 +508,9 @@ const clearImages = () => {
             @click="selectImage(index)"
           >
             <img :src="image.src" alt="缩略图" class="thumbnail-img" />
-            <button @click.stop="removeImage(index)" class="remove-button">×</button>
+            <button @click.stop="removeImage(index)" class="remove-button" title="删除">
+              <close-icon :size="14" />
+            </button>
           </div>
         </div>
         
@@ -477,8 +529,7 @@ const clearImages = () => {
                 ref="watermarkElement"
                 class="watermark-text" 
                 :style="watermarkStyle"
-                @mousedown="startDragWatermark"
-                :class="{ 'dragging': isDraggingWatermark }"
+                :class="{ 'active': true }"
               >
                 {{ formattedTimestamp }}
               </div>
@@ -489,61 +540,75 @@ const clearImages = () => {
           <div class="settings-panel">
             <h2>水印设置</h2>
             
-            <div class="setting-group">
-              <label>字体大小:</label>
-              <input type="range" v-model.number="watermarkSettings.fontSize" min="8" max="72" step="1" />
-              <span>{{ watermarkSettings.fontSize }}px</span>
-            </div>
-            
-            <div class="setting-group">
-              <label>颜色:</label>
-              <input type="color" v-model="watermarkSettings.color" />
-            </div>
-            
-            <div class="setting-group">
-              <label>不透明度:</label>
-              <input type="range" v-model.number="watermarkSettings.opacity" min="0.1" max="1" step="0.1" />
-              <span>{{ Math.round(watermarkSettings.opacity * 100) }}%</span>
-            </div>
-            
-            <div class="setting-group">
-              <label>时间戳:</label>
-              <div class="time-settings">
-                <label>
-                  <input type="radio" v-model="watermarkSettings.useCurrentTime" :value="true" />
-                  使用当前时间
-                </label>
-                <label>
-                  <input type="radio" v-model="watermarkSettings.useCurrentTime" :value="false" />
-                  使用自定义时间
-                </label>
+            <div class="settings-scroll-area">
+              <div class="setting-group">
+                <label>字体大小:</label>
+                <input type="range" v-model.number="watermarkSettings.fontSize" min="8" max="20" step="1" />
+                <span>{{ watermarkSettings.fontSize }}px</span>
+              </div>
+              
+              <div class="setting-group">
+                <label>颜色:</label>
+                <input type="color" v-model="watermarkSettings.color" />
+              </div>
+              
+              <div class="setting-group">
+                <label>不透明度:</label>
+                <input type="range" v-model.number="watermarkSettings.opacity" min="0.1" max="1" step="0.1" />
+                <span>{{ Math.round(watermarkSettings.opacity * 100) }}%</span>
+              </div>
+              
+              <div class="setting-group">
+                <label>时间戳:</label>
+                <div class="time-settings">
+                  <label>
+                    <input type="radio" v-model="watermarkSettings.useCurrentTime" :value="true" />
+                    使用当前时间
+                  </label>
+                  <label>
+                    <input type="radio" v-model="watermarkSettings.useCurrentTime" :value="false" />
+                    使用自定义时间
+                  </label>
+                </div>
+              </div>
+              
+              <div class="setting-group" v-if="!watermarkSettings.useCurrentTime">
+                <label>自定义时间:</label>
+                <input type="datetime-local" v-model="watermarkSettings.customTime" />
+              </div>
+              
+              <div class="setting-group">
+                <label>水印位置:</label>
+                <div class="position-grid">
+                  <div 
+                    v-for="(pos, index) in positionMap" 
+                    :key="index"
+                    class="position-cell"
+                    :class="{ 'active': watermarkSettings.position === index }"
+                    @click="watermarkSettings.position = index"
+                  >
+                    <span class="position-name">{{ pos.name }}</span>
+                  </div>
+                </div>
               </div>
             </div>
             
-            <div class="setting-group" v-if="!watermarkSettings.useCurrentTime">
-              <label>自定义时间:</label>
-              <input type="datetime-local" v-model="watermarkSettings.customTime" />
-            </div>
-            
-            <div class="setting-group tip">
-              <p class="tip-text">提示：水印文本可以在图片上拖动调整位置</p>
-            </div>
-            
             <div class="actions">
-              <button @click="applyWatermark" class="apply-button" :disabled="loading">
-                {{ loading ? '处理中...' : '应用水印' }}
+              <button @click="applyWatermark" class="icon-btn" :disabled="loading" title="应用水印">
+                <check-icon :size="18" />
+                <span class="btn-text">{{ loading ? '处理中...' : '应用' }}</span>
               </button>
               
-              <button @click="downloadImage" class="download-button" :disabled="!currentImage || !currentImage.processed">
-                下载当前图片
+              <button @click="downloadImage" class="icon-btn" :disabled="!currentImage || !currentImage.processed" title="下载当前图片">
+                <download-icon :size="18" />
               </button>
               
-              <button @click="processAllImages" class="process-all-button" :disabled="loading">
-                批量处理全部
+              <button @click="processAllImages" class="icon-btn" :disabled="loading" title="批量处理全部">
+                <check-all-icon :size="18" />
               </button>
               
-              <button @click="downloadAllImages" class="download-all-button">
-                下载全部
+              <button @click="downloadAllImages" class="icon-btn" title="下载全部">
+                <download-multiple-icon :size="18" />
               </button>
             </div>
           </div>
@@ -555,7 +620,9 @@ const clearImages = () => {
         <div class="settings-modal-content">
           <div class="settings-modal-header">
             <h3>高级设置</h3>
-            <button @click="toggleSettings" class="close-settings">×</button>
+            <button @click="toggleSettings" class="close-settings" title="关闭">
+              <close-icon :size="18" />
+            </button>
           </div>
           
           <div class="settings-modal-body">
@@ -592,6 +659,10 @@ html, body {
   color: #333333;
   min-height: 100vh;
   box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden; /* 防止整体滚动 */
+  width: 100%; /* 确保宽度适应 */
 }
 
 /* 上传页面样式 */
@@ -601,6 +672,9 @@ html, body {
   align-items: center;
   gap: 30px;
   min-height: 80vh;
+  width: 100%;
+  padding: 0 10px;
+  box-sizing: border-box;
 }
 
 .upload-page h1 {
@@ -648,17 +722,24 @@ html, body {
 
 .upload-button {
   padding: 10px 20px;
-  background-color: #4CAF50;
+  background-color: #555;
   color: white;
   border: none;
   border-radius: 4px;
   cursor: pointer;
   font-size: 16px;
   transition: background-color 0.3s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: auto;
+  height: auto;
+  line-height: 1; /* 添加行高为1 */
 }
 
 .upload-button:hover {
-  background-color: #45a049;
+  background-color: #333;
 }
 
 .url-upload {
@@ -689,21 +770,28 @@ html, body {
 }
 
 .url-upload-button {
-  padding: 10px 20px;
-  background-color: #2196F3;
+  padding: 0; /* 移除内边距 */
+  background-color: #555;
   color: white;
   border: none;
   border-radius: 4px;
   cursor: pointer;
   transition: background-color 0.3s;
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1; /* 添加行高为1 */
 }
 
 .url-upload-button:hover {
-  background-color: #0b7dda;
+  background-color: #333;
 }
 
 .url-upload-button:disabled {
-  background-color: #b0c4de;
+  background-color: #999;
   cursor: not-allowed;
 }
 
@@ -714,6 +802,8 @@ html, body {
   gap: 20px;
   position: relative;
   min-height: 80vh;
+  max-height: calc(100vh - 100px); /* 限制最大高度，减去头部和边距 */
+  overflow: hidden; /* 防止整体滚动 */
 }
 
 .edit-header {
@@ -727,52 +817,43 @@ html, body {
   color: #333333;
 }
 
-.back-button {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 8px 15px;
-  background-color: #f0f0f0;
-  color: #333333;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: background-color 0.3s;
-}
-
-.back-button:hover {
-  background-color: #e0e0e0;
-}
-
 .action-buttons {
   display: flex;
   gap: 10px;
 }
 
-.settings-button {
-  display: flex;
+.icon-btn {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 8px 12px;
-  background-color: #2196F3;
+  gap: 4px;
+  padding: 0; /* 移除内边距 */
+  background-color: #555;
   color: white;
   border: none;
   border-radius: 4px;
   cursor: pointer;
   transition: background-color 0.3s;
+  font-size: 14px;
+  min-width: 36px;
+  min-height: 36px;
+  width: 36px;
+  height: 36px;
+  aspect-ratio: 1;
+  line-height: 1; /* 添加行高为1 */
 }
 
-.settings-button:hover {
-  background-color: #0b7dda;
+.icon-btn:hover {
+  background-color: #333;
 }
 
-.clear-button {
-  padding: 8px 15px;
-  background-color: #f44336;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
+.icon-btn:disabled {
+  background-color: #999;
+  cursor: not-allowed;
+}
+
+.btn-text {
+  display: none;
 }
 
 .edit-content {
@@ -780,6 +861,9 @@ html, body {
   gap: 20px;
   flex: 1;
   min-height: 500px;
+  height: calc(100vh - 150px);
+  overflow: hidden; /* 防止整体滚动 */
+  width: 100%;
 }
 
 .thumbnails {
@@ -789,6 +873,7 @@ html, body {
   flex-direction: column;
   gap: 10px;
   padding-right: 10px;
+  flex-shrink: 0; /* 防止缩小 */
 }
 
 .thumbnail-item {
@@ -802,7 +887,7 @@ html, body {
 }
 
 .thumbnail-item.active {
-  border-color: #2196F3;
+  border-color: #555;
 }
 
 .thumbnail-img {
@@ -828,6 +913,8 @@ html, body {
   font-size: 14px;
   opacity: 0;
   transition: opacity 0.3s;
+  padding: 0;
+  line-height: 1; /* 添加行高为1 */
 }
 
 .thumbnail-item:hover .remove-button {
@@ -838,17 +925,20 @@ html, body {
   flex: 1;
   display: flex;
   gap: 20px;
+  overflow: hidden;
+  min-width: 0; /* 允许缩小到容器宽度 */
 }
 
 .preview-panel {
   flex: 3;
-  border: 1px solid #ddd;
-  border-radius: 8px;
-  overflow: hidden;
-  background-color: #f5f5f5;
   display: flex;
   align-items: center;
   justify-content: center;
+  background-color: transparent;
+  padding: 10px;
+  box-sizing: border-box;
+  overflow: hidden; /* 防止预览区滚动 */
+  min-width: 0; /* 允许缩小 */
 }
 
 .preview-container {
@@ -857,29 +947,35 @@ html, body {
   max-width: 100%;
   max-height: 100%;
   line-height: 0;
+  overflow: hidden; /* 确保内容不超出容器 */
+  box-sizing: border-box;
 }
 
 .preview-image {
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
+  display: block; /* 确保图片正确显示 */
+  box-sizing: border-box;
 }
 
 .watermark-text {
   position: absolute;
-  cursor: move;
+  cursor: default;
   padding: 5px;
   white-space: nowrap;
   user-select: none;
   transition: transform 0.05s ease;
   text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.8);
-  pointer-events: auto;
+  pointer-events: none;
   z-index: 10;
-}
-
-.watermark-text.dragging {
-  transition: none;
-  z-index: 20;
+  text-align: center;
+  box-sizing: border-box;
+  border-radius: 2px;
+  max-width: 90%;
+  text-overflow: ellipsis;
+  /* 移除overflow: hidden，允许文本完整显示 */
+  line-height: normal;
 }
 
 .settings-panel {
@@ -887,18 +983,38 @@ html, body {
   padding: 20px;
   background-color: #f9f9f9;
   border-radius: 8px;
-  overflow-y: auto;
   color: #333333;
+  display: flex;
+  flex-direction: column;
+  max-width: 320px;
+  min-width: 280px; /* 确保最小宽度 */
+  max-height: 100%; /* 占满容器高度 */
+  overflow: hidden; /* 自身不滚动 */
+  box-sizing: border-box; /* 确保padding不增加宽度 */
+  flex-shrink: 0; /* 默认不收缩 */
 }
 
 .settings-panel h2 {
   margin-top: 0;
-  margin-bottom: 20px;
+  margin-bottom: 15px;
   color: #333333;
+}
+
+/* 设置可滚动区域 */
+.settings-scroll-area {
+  flex: 1;
+  overflow-y: auto; /* 内部可滚动 */
+  padding-right: 10px;
+  margin-bottom: 15px;
+  max-height: 100%; /* 填满可用空间 */
+  width: calc(100% - 10px); /* 控制宽度 */
+  box-sizing: border-box; /* 确保内边距计算在内 */
 }
 
 .setting-group {
   margin-bottom: 15px;
+  width: 100%; /* 确保宽度完全填充父容器 */
+  box-sizing: border-box; /* 包括内边距在内的盒模型 */
 }
 
 .setting-group label {
@@ -912,6 +1028,7 @@ html, body {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  width: 100%; /* 确保宽度完全填充父容器 */
 }
 
 .time-settings label {
@@ -925,85 +1042,20 @@ html, body {
 .setting-group input[type="text"],
 .setting-group input[type="datetime-local"],
 .setting-group select {
-  width: 100%;
+  width: calc(100% - 16px); /* 减去内边距 */
   padding: 8px;
   border: 1px solid #ccc;
   border-radius: 4px;
   background-color: #ffffff;
   color: #333333;
-}
-
-.tip {
-  background-color: #e8f4fd;
-  padding: 10px;
-  border-radius: 4px;
-  border-left: 4px solid #2196F3;
-}
-
-.tip-text {
-  margin: 0;
-  color: #0277bd;
-  font-size: 14px;
+  box-sizing: border-box; /* 确保padding不增加宽度 */
 }
 
 .actions {
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
   gap: 10px;
-  margin-top: 20px;
-}
-
-.apply-button,
-.download-button,
-.process-all-button,
-.download-all-button {
-  padding: 10px;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 16px;
-  transition: background-color 0.3s;
-}
-
-.apply-button {
-  background-color: #2196F3;
-  color: white;
-}
-
-.apply-button:hover {
-  background-color: #0b7dda;
-}
-
-.download-button {
-  background-color: #4CAF50;
-  color: white;
-}
-
-.download-button:hover {
-  background-color: #45a049;
-}
-
-.process-all-button {
-  background-color: #ff9800;
-  color: white;
-}
-
-.process-all-button:hover {
-  background-color: #e68a00;
-}
-
-.download-all-button {
-  background-color: #9c27b0;
-  color: white;
-}
-
-.download-all-button:hover {
-  background-color: #7b1fa2;
-}
-
-button:disabled {
-  background-color: #cccccc;
-  cursor: not-allowed;
+  margin-top: auto;
 }
 
 /* 设置弹出面板 */
@@ -1048,13 +1100,180 @@ button:disabled {
 .close-settings {
   background: none;
   border: none;
-  font-size: 22px;
   cursor: pointer;
   color: #666;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  line-height: 1; /* 添加行高为1 */
 }
 
 .settings-modal-body {
   padding: 20px;
   color: #333333;
+}
+
+/* 滚动条样式定制 */
+.settings-scroll-area::-webkit-scrollbar {
+  width: 6px;
+}
+
+.settings-scroll-area::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 10px;
+}
+
+.settings-scroll-area::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 10px;
+}
+
+.settings-scroll-area::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+
+/* 添加九宫格位置选择器样式 */
+.position-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  gap: 5px;
+  margin-top: 10px;
+  background-color: #f0f0f0;
+  border-radius: 4px;
+  padding: 5px;
+  width: calc(100% - 10px); /* 控制宽度防止溢出 */
+}
+
+.position-cell {
+  width: 100%;
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #e0e0e0;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s;
+}
+
+.position-cell:hover {
+  background-color: #d0d0d0;
+}
+
+.position-cell.active {
+  background-color: #555;
+  color: white;
+}
+
+.position-name {
+  font-size: 12px;
+}
+
+/* 添加响应式设计媒体查询 */
+@media (max-width: 1024px) {
+  .edit-content {
+    gap: 15px;
+  }
+  
+  .settings-panel {
+    min-width: 260px;
+    max-width: 280px;
+    padding: 15px;
+  }
+}
+
+@media (max-width: 900px) {
+  .main-edit-area {
+    flex-direction: column;
+    overflow-y: auto;
+  }
+  
+  .preview-panel {
+    flex: none;
+    height: 50%;
+    min-height: 300px;
+  }
+  
+  .settings-panel {
+    flex: none;
+    max-width: 100%;
+    min-width: 100%;
+    height: auto;
+  }
+  
+  .edit-content {
+    height: auto;
+    min-height: 80vh;
+    overflow-y: auto;
+  }
+}
+
+@media (max-width: 768px) {
+  .edit-content {
+    flex-direction: column;
+  }
+  
+  .thumbnails {
+    width: 100%;
+    flex-direction: row;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding-right: 0;
+    padding-bottom: 10px;
+    max-height: 120px;
+  }
+  
+  .thumbnail-item {
+    min-width: 100px;
+    max-width: 100px;
+  }
+  
+  .edit-header h1 {
+    font-size: 1.5rem;
+  }
+  
+  .settings-scroll-area {
+    max-height: 400px;
+  }
+}
+
+@media (max-width: 480px) {
+  .watermark-app {
+    padding: 10px;
+  }
+  
+  .edit-header {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  
+  .edit-header h1 {
+    font-size: 1.2rem;
+    width: 100%;
+    text-align: center;
+    margin: 10px 0;
+  }
+  
+  .position-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  
+  .drop-area {
+    height: 200px;
+  }
+  
+  .preview-panel {
+    min-height: 250px;
+  }
+  
+  .icon-btn {
+    min-width: 32px;
+    min-height: 32px;
+    width: 32px;
+    height: 32px;
+  }
 }
 </style> 

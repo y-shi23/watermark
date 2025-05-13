@@ -34,14 +34,69 @@ export const createWatermark = (imageSrc, timestamp, settings, formattedText) =>
         // 计算文本尺寸
         const textMetrics = ctx.measureText(watermarkText);
         const textWidth = textMetrics.width;
-        const textHeight = settings.fontSize;
+        // 字体大小调整为1.2倍，更好地估计文本高度
+        const textHeight = settings.fontSize * 1.2;
         
-        // 计算坐标
-        const x = (settings.position.x / 100) * img.width - (textWidth / 2);
-        const y = (settings.position.y / 100) * img.height;
+        // 位置映射表 (九宫格)
+        const positionMap = [
+          { name: '左上', x: 0, y: 0 }, // 0
+          { name: '上中', x: 0.5, y: 0 }, // 1
+          { name: '右上', x: 1, y: 0 }, // 2
+          { name: '左中', x: 0, y: 0.5 }, // 3
+          { name: '中心', x: 0.5, y: 0.5 }, // 4
+          { name: '右中', x: 1, y: 0.5 }, // 5
+          { name: '左下', x: 0, y: 1 }, // 6
+          { name: '下中', x: 0.5, y: 1 }, // 7
+          { name: '右下', x: 1, y: 1 }, // 8
+        ];
+        
+        // 获取当前位置
+        const posIndex = typeof settings.position === 'number' ? settings.position : 8;
+        const position = positionMap[posIndex] || positionMap[8]; // 默认右下
+        
+        // 定义边缘内边距（像素）
+        const padding = 20;
+        
+        // 计算文本在图片上的实际位置
+        let x, y;
+        
+        // 根据相对位置计算实际像素坐标
+        if (position.x === 0) { // 左侧
+          x = padding + textWidth / 2;
+        } else if (position.x === 1) { // 右侧
+          x = img.width - padding - textWidth / 2;
+        } else { // 水平居中
+          x = img.width * position.x;
+        }
+        
+        if (position.y === 0) { // 顶部
+          y = padding + textHeight / 2;
+        } else if (position.y === 1) { // 底部
+          y = img.height - padding;
+        } else { // 垂直居中
+          y = img.height * position.y + textHeight / 4;
+        }
+        
+        // 确保水印完全在图片内部显示
+        x = Math.max(textWidth / 2 + padding, Math.min(img.width - textWidth / 2 - padding, x));
+        y = Math.max(textHeight / 2 + padding, Math.min(img.height - padding, y));
+        
+        // 绘制文本前增加一个轻微背景（可选，提高可读性）
+        if (settings.opacity < 0.8) { // 只有当透明度较低时添加
+          const bgPadding = 5;
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+          ctx.fillRect(
+            x - textWidth / 2 - bgPadding, 
+            y - textHeight + bgPadding, 
+            textWidth + bgPadding * 2, 
+            textHeight + bgPadding
+          );
+          // 恢复文本颜色
+          ctx.fillStyle = hexToRgba(settings.color, settings.opacity);
+        }
         
         // 绘制水印文本
-        ctx.fillText(watermarkText, x, y);
+        ctx.fillText(watermarkText, x - textWidth / 2, y);
         
         // 导出处理后的图片
         const processedImageUrl = canvas.toDataURL(getOutputFormat(img.src));
